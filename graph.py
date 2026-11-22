@@ -1,31 +1,32 @@
-"""Benefit Domino Effect graph — NetworkX + Plotly. No Streamlit imports."""
+"""BenefitChain AI — spacious, accessible NetworkX / Plotly graph preview.
+
+Preview only: leave the existing graph.py unchanged.
+"""
+from math import hypot
 import networkx as nx
 import plotly.graph_objects as go
-from engine import Household, ScreeningResult, LifelineStatus
+from engine import LifelineStatus
 
-# Fixed node positions
 _NODE_POSITIONS = {
-    'SNAP':     (0.0, 1.0),
-    'Medicaid': (0.0, 0.0),
-    'Lifeline': (1.0, 0.5),
-    'SER':      (2.0, 0.5),
+    'SNAP': (0.0, 1.35),
+    'Medicaid': (0.0, -1.35),
+    'Lifeline': (2.6, 0.0),
+    'SER': (5.15, 0.0),
 }
 
-# Visual properties by node state: color and text label suffix
 _STATE_STYLES = {
-    'qualifies':         {'color': '#2ecc71', 'suffix': '(Potential Pathway)'},
-    'already_receiving': {'color': '#4a90d9', 'suffix': '(Already Receiving)'},
-    'not_indicated':     {'color': '#aaaaaa', 'suffix': '(Not Indicated)'},
+    'qualifies': {'color': '#18a67d', 'text': 'Potential pathway'},
+    'already_receiving': {'color': '#438bd4', 'text': 'Already receiving'},
+    'not_indicated': {'color': '#aeb9c6', 'text': 'Not indicated'},
 }
 
 _EDGES = [
-    ('SNAP',     'Lifeline', 'Proof of SNAP participation required'),
-    ('Medicaid', 'Lifeline', 'Proof of Medicaid enrollment required'),
+    ('SNAP', 'Lifeline', 'Proof of SNAP participation may be required'),
+    ('Medicaid', 'Lifeline', 'Proof of Medicaid enrollment may be required'),
 ]
 
 
 def _node_state(node, household, results):
-    """Return the state string for a graph node."""
     if node == 'SNAP':
         return 'already_receiving' if household.snap else 'not_indicated'
     if node == 'Medicaid':
@@ -41,122 +42,89 @@ def _node_state(node, household, results):
             return 'already_receiving'
         return 'not_indicated'
     if node == 'SER':
-        if not results or len(results) < 3:
-            return 'not_indicated'
-        return 'qualifies' if results[2].status == 'urgent_referral' else 'not_indicated'
+        if len(results) > 2 and results[2].status == 'urgent_referral':
+            return 'qualifies'
+        return 'not_indicated'
     return 'not_indicated'
 
 
 def build_benefit_graph(household, results):
-    """Build the benefit relationship DiGraph.
-
-    Args:
-        household: Household with snap/medicaid participation flags.
-        results: list of ScreeningResult from screen() — index 0=Lifeline, 2=SER.
-
-    Returns:
-        nx.DiGraph with nodes SNAP, Medicaid, Lifeline, SER and two directed edges.
-    """
-    G = nx.DiGraph()
-    for node in _NODE_POSITIONS:
-        state = _node_state(node, household, results)
-        G.add_node(node, state=state, pos=_NODE_POSITIONS[node])
+    """Return an nx.DiGraph with the same four programs and two pathways."""
+    graph = nx.DiGraph()
+    for node, pos in _NODE_POSITIONS.items():
+        graph.add_node(node, pos=pos, state=_node_state(node, household, results))
     for src, dst, label in _EDGES:
-        G.add_edge(src, dst, label=label, pathway=True)
-    return G
+        graph.add_edge(src, dst, label=label, pathway=True)
+    return graph
 
 
 def render_benefit_graph(household, results):
-    """Build and render the benefit graph as a Plotly figure with arrows."""
+    """Draw an uncluttered, interactive map; descriptions remain in hover text."""
     if not results:
         return go.Figure()
 
-    try:
-        G = build_benefit_graph(household, results)
-    except Exception:
-        return go.Figure()
+    graph = build_benefit_graph(household, results)
+    figure = go.Figure()
 
-    pos = _NODE_POSITIONS
-    traces = []
-
-    # Node traces — markers with color AND text state label for accessibility
-    for node in list(_NODE_POSITIONS.keys()):
-        x, y = pos[node]
-        state = G.nodes[node]['state']
-        style = _STATE_STYLES.get(state, _STATE_STYLES['not_indicated'])
-        traces.append(go.Scatter(
-            x=[x], y=[y],
-            mode='markers+text',
-            marker=dict(
-                size=52,
-                color=style['color'],
-                line=dict(color='#222222', width=2),
-            ),
-            text=[node],
-            textposition='top center',
-            textfont=dict(size=13, color='#111111'),
-            hovertemplate='<b>' + node + '</b><br>' + style['suffix'] + '<extra></extra>',
-            showlegend=False,
-        ))
-        # State label below node
-        traces.append(go.Scatter(
-            x=[x], y=[y - 0.2],
-            mode='text',
-            text=[style['suffix']],
-            textfont=dict(size=10, color='#444444'),
-            hoverinfo='none',
-            showlegend=False,
-        ))
-
-    fig = go.Figure(
-        data=traces,
-        layout=go.Layout(
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
-                       range=[-0.6, 2.8]),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
-                       range=[-0.6, 1.6]),
-            plot_bgcolor='#fafafa',
-            paper_bgcolor='white',
-            margin=dict(l=20, r=20, t=20, b=20),
-            height=360,
-        ),
-    )
-
-    # Arrows via annotations
-    import math
+    # Pale lanes behind the source -> Lifeline connections.
     for src, dst, label in _EDGES:
-        x0, y0 = pos[src]
-        x1, y1 = pos[dst]
-        dx, dy = x1 - x0, y1 - y0
-        dist = math.sqrt(dx * dx + dy * dy)
-        ux, uy = dx / dist, dy / dist
-        offset = 0.14
-        ax0 = x0 + ux * offset
-        ay0 = y0 + uy * offset
-        ax1 = x1 - ux * offset
-        ay1 = y1 - uy * offset
-
-        fig.add_annotation(
-            x=ax1, y=ay1,
-            ax=ax0, ay=ay0,
-            xref='x', yref='y',
-            axref='x', ayref='y',
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=1.3,
-            arrowwidth=2.5,
-            arrowcolor='#555555',
-            text='',
+        x0, y0 = _NODE_POSITIONS[src]
+        x1, y1 = _NODE_POSITIONS[dst]
+        length = hypot(x1 - x0, y1 - y0)
+        ux, uy = (x1 - x0) / length, (y1 - y0) / length
+        # Arrows stop outside the 78 px node markers, leaving labels legible.
+        start = 0.36
+        finish = 0.42
+        active = bool(getattr(household, src.lower(), False))
+        color = '#159a8c' if active else '#aab7c5'
+        figure.add_annotation(
+            x=x1 - ux * finish, y=y1 - uy * finish,
+            ax=x0 + ux * start, ay=y0 + uy * start,
+            xref='x', yref='y', axref='x', ayref='y',
+            text='', showarrow=True, arrowhead=2, arrowsize=1.25,
+            arrowwidth=3 if active else 2.1, arrowcolor=color,
+            opacity=1 if active else 0.65,
         )
-        # Edge label at midpoint, slightly above the line
-        fig.add_annotation(
-            x=(x0 + x1) / 2,
-            y=(y0 + y1) / 2 + 0.1,
-            text='<i>' + label + '</i>',
-            showarrow=False,
-            font=dict(size=10, color='#555555'),
-            bgcolor='rgba(255,255,255,0.85)',
-            borderpad=3,
-        )
+        # Invisible wide hover target carries the full explanation.
+        figure.add_trace(go.Scatter(
+            x=[x0 + (x1-x0)*0.35, x0 + (x1-x0)*0.65],
+            y=[y0 + (y1-y0)*0.35, y0 + (y1-y0)*0.65],
+            mode='lines', line={'color': 'rgba(0,0,0,0)', 'width': 18},
+            hovertemplate=f'{src} → {dst}<br>{label}<br>Separate application required<extra></extra>',
+            showlegend=False,
+        ))
 
-    return fig
+    for node, (x, y) in _NODE_POSITIONS.items():
+        state = graph.nodes[node]['state']
+        style = _STATE_STYLES[state]
+        figure.add_trace(go.Scatter(
+            x=[x], y=[y], mode='markers',
+            marker={'size': 76, 'color': style['color'],
+                    'line': {'color': '#ffffff', 'width': 4}},
+            hovertemplate=f'<b>{node}</b><br>{style["text"]}<extra></extra>',
+            showlegend=False,
+        ))
+        figure.add_annotation(x=x, y=y + 0.60, text=f'<b>{node}</b>',
+                              showarrow=False, font={'size': 17, 'color': '#143658'})
+        figure.add_annotation(x=x, y=y - 0.58, text=style['text'],
+                              showarrow=False, font={'size': 12, 'color': '#4a6078'},
+                              bgcolor='#f5f9fc', borderpad=3)
+
+    # Text labels are placed away from the connecting lines, not across them.
+    figure.add_annotation(x=1.15, y=1.18, text='SNAP pathway', showarrow=False,
+                          font={'size': 12, 'color': '#356579'}, bgcolor='#f5f9fc', borderpad=3)
+    figure.add_annotation(x=1.15, y=-1.18, text='Medicaid pathway', showarrow=False,
+                          font={'size': 12, 'color': '#356579'}, bgcolor='#f5f9fc', borderpad=3)
+    figure.add_annotation(x=3.9, y=-0.78, showarrow=False,
+                          text='SER is a separate<br>emergency referral',
+                          font={'size': 12, 'color': '#62768b'}, align='center')
+    figure.update_layout(
+        height=480,
+        margin={'l': 16, 'r': 16, 't': 24, 'b': 14},
+        paper_bgcolor='#ffffff', plot_bgcolor='#f8fbff',
+        xaxis={'range': [-0.85, 5.95], 'visible': False, 'fixedrange': True},
+        yaxis={'range': [-2.15, 2.18], 'visible': False, 'fixedrange': True,
+               'scaleanchor': 'x', 'scaleratio': 0.9},
+        hovermode='closest', dragmode=False,
+    )
+    return figure
