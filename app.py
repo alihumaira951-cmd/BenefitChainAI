@@ -6,7 +6,7 @@ from engine import (
     Household, screen, LifelineStatus, SavingsRange,
     LIFELINE_STANDARD_MONTHLY_MAX, LIFELINE_STANDARD_ANNUAL_MAX,
 )
-from graph_redesign_preview import render_benefit_graph
+from graph import render_benefit_graph
 
 # ---------------------------------------------------------------------------
 # Page config — centered layout, no sidebar
