@@ -82,7 +82,7 @@ Development followed a structured, specification-driven process:
 6. Helped identify and correct dashboard formatting, graph visualization, and status-label issues.
 7. Refined household-specific explanations and separated emergency referrals from qualification pathways.
 
-Kiro's project specifications are maintained in the local `.kiro/specs/benefitchain/` development directory and will be added to this repository.
+Kiro's requirements, design, and implementation tasks are available in `.kiro/specs/benefitchain/`. Product steering instructions are available in `.kiro/steering/product.md`. These documents demonstrate our specification-driven development process and project guidelines.
 
 ## Testing
 
@@ -105,10 +105,14 @@ python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-To run the automated tests after obtaining the test suite:
+To run the automated tests locally:
 
 ```bash
+python -m pip install pytest
 python -m pytest tests/ -v
+```
+
+Automated tests also run through GitHub Actions whenever changes are pushed to the main branch or a pull request is opened.
 ```
 
 ## Official Sources
