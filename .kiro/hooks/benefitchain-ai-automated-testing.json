@@ -1,0 +1,17 @@
+
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "BenefitChain AI - Automated Testing",
+      "trigger": "PostFileSave",
+      "action": {
+        "type": "command",
+        "command": "cd ~/Downloads/BenefitChainAI && python -m pytest tests/ -q && echo 'Kiro hook executed' >> kiro_hook_log.txt"
+      },
+      "description": "Automatically runs BenefitChain AI's Python tests whenever a Python file is saved, helping detect errors and protect existing screening functionality.",
+      "matcher": "\\.py$",
+      "enabled": true
+    }
+  ]
+}
