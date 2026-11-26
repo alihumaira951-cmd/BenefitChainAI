@@ -563,7 +563,7 @@ with st.form('household_form'):
         'How many household members are under age 19?',
         min_value=0,
         max_value=20,
-        value=0,
+        value=int(st.session_state.get('children_under_19', 0)),
         step=1,
         help='This helps identify possible children’s health coverage programs.',
     )
@@ -597,42 +597,47 @@ with st.form('household_form'):
 # Validation and screening
 # ---------------------------------------------------------------------------
 if submitted:
-    st.session_state.household_size    = int(household_size)
+    st.session_state.household_size = int(household_size)
     st.session_state.children_under_19 = int(children_under_19)
-    st.session_state.annual_income     = float(annual_income)
-    st.session_state.snap              = snap
-    st.session_state.medicaid          = medicaid
-    st.session_state.ssi               = ssi
-    st.session_state.public_housing    = public_housing
-    st.session_state.veterans_pension  = veterans_pension
-    st.session_state.lifeline_already  = lifeline_already
+    st.session_state.annual_income = float(annual_income)
+    st.session_state.snap = snap
+    st.session_state.medicaid = medicaid
+    st.session_state.ssi = ssi
+    st.session_state.public_housing = public_housing
+    st.session_state.veterans_pension = veterans_pension
+    st.session_state.lifeline_already = lifeline_already
     st.session_state.utility_emergency = utility_emergency
-    st.session_state.demo_loaded       = False
+    st.session_state.demo_loaded = False
+    # Keep original screening results visible when the What-If form submits.
+    st.session_state.screening_complete = True
+    # A new real screening invalidates any previous hypothetical comparison.
+    st.session_state.pop('whatif_scenario', None)
+    for _key in ('whatif_income_widget', 'whatif_snap_widget', 'whatif_medicaid_widget'):
+        st.session_state.pop(_key, None)
 
-    if int(children_under_19) > int(household_size):
-        st.error(
-            "The number of children cannot exceed the total household size."
-        )
-        st.stop()
-    if int(household_size) < 1:
+if submitted or st.session_state.get('screening_complete', False):
+    if int(st.session_state.household_size) < 1:
         st.error('Household size must be at least 1.')
         st.stop()
-    if float(annual_income) < 0:
+    if int(st.session_state.children_under_19) > int(st.session_state.household_size):
+        st.error('The number of children cannot exceed the total household size.')
+        st.stop()
+    if float(st.session_state.annual_income) < 0:
         st.error('Annual income cannot be negative.')
         st.stop()
 
     h = Household(
         state='Michigan',
-        size=int(household_size),
-        children_under_19=int(children_under_19),
-        annual_income=float(annual_income),
-        snap=snap,
-        medicaid=medicaid,
-        ssi=ssi,
-        public_housing=public_housing,
-        veterans_pension=veterans_pension,
-        utility_emergency=utility_emergency,
-        lifeline_already=lifeline_already,
+        size=int(st.session_state.household_size),
+        children_under_19=int(st.session_state.children_under_19),
+        annual_income=float(st.session_state.annual_income),
+        snap=bool(st.session_state.snap),
+        medicaid=bool(st.session_state.medicaid),
+        ssi=bool(st.session_state.ssi),
+        public_housing=bool(st.session_state.public_housing),
+        veterans_pension=bool(st.session_state.veterans_pension),
+        utility_emergency=bool(st.session_state.utility_emergency),
+        lifeline_already=bool(st.session_state.lifeline_already),
     )
 
     try:
@@ -822,6 +827,125 @@ if submitted:
         + '</div>',
         unsafe_allow_html=True,
     )
+
+    # ------------------------------------------------------------------
+    # What-If Explorer: hypothetical input changes, never actual enrollment
+    # ------------------------------------------------------------------
+    st.markdown(
+        '<div class="section-title" style="margin-top:1.7rem">'
+        '🧭 Explore What-If Scenarios</div>', unsafe_allow_html=True,
+    )
+    st.caption(
+        'Explore how *hypothetical* income or program participation changes could '
+        'affect the preliminary **Lifeline** screening. This does not update your original answers, '
+        'verify enrollment, or guarantee assistance.'
+    )
+    baseline = {
+        'size': int(st.session_state.household_size),
+        'children_under_19': int(st.session_state.children_under_19),
+        'annual_income': float(st.session_state.annual_income),
+        'snap': bool(st.session_state.snap),
+        'medicaid': bool(st.session_state.medicaid),
+        'ssi': bool(st.session_state.ssi),
+        'public_housing': bool(st.session_state.public_housing),
+        'veterans_pension': bool(st.session_state.veterans_pension),
+        'utility_emergency': bool(st.session_state.utility_emergency),
+        'lifeline_already': bool(st.session_state.lifeline_already),
+    }
+    # The scenario is committed only when the user clicks Compare. Rerunning the
+    # Streamlit script then preserves the original household and its results.
+    with st.form('whatif_form'):
+        hypothetical_income = st.number_input(
+            'Hypothetical annual gross household income ($)',
+            min_value=0.0,
+            max_value=1_000_000.0,
+            value=float(baseline['annual_income']),
+            step=500.0,
+            key='whatif_income_widget',
+        )
+        wc1, wc2 = st.columns(2)
+        with wc1:
+            hypothetical_snap = st.checkbox(
+                'What if the household received SNAP?',
+                value=baseline['snap'],
+                key='whatif_snap_widget',
+            )
+        with wc2:
+            hypothetical_medicaid = st.checkbox(
+                'What if the household received Medicaid?',
+                value=baseline['medicaid'],
+                key='whatif_medicaid_widget',
+            )
+        compare = st.form_submit_button(
+            'Compare hypothetical pathways', use_container_width=True,
+        )
+    if compare:
+        st.session_state.whatif_scenario = {
+            'annual_income': float(hypothetical_income),
+            'snap': bool(hypothetical_snap),
+            'medicaid': bool(hypothetical_medicaid),
+            'baseline': baseline,
+        }
+
+    scenario = st.session_state.get('whatif_scenario')
+    if scenario and scenario.get('baseline') == baseline:
+        simulated = Household(
+            state='Michigan',
+            size=baseline['size'],
+            children_under_19=baseline['children_under_19'],
+            annual_income=scenario['annual_income'],
+            snap=scenario['snap'],
+            medicaid=scenario['medicaid'],
+            ssi=baseline['ssi'],
+            public_housing=baseline['public_housing'],
+            veterans_pension=baseline['veterans_pension'],
+            utility_emergency=baseline['utility_emergency'],
+            lifeline_already=baseline['lifeline_already'],
+        )
+        try:
+            hypothetical_results = screen(simulated)
+        except ValueError as e:
+            st.error('Please check the hypothetical inputs: ' + str(e))
+            hypothetical_results = None
+        if hypothetical_results:
+            def describe_pathway(r):
+                status = r[0].status
+                if status == LifelineStatus.LIKELY_QUALIFIES_PROGRAM:
+                    return 'Potential Lifeline pathway — program participation'
+                if status == LifelineStatus.LIKELY_QUALIFIES_INCOME:
+                    return 'Potential Lifeline pathway — income'
+                if status == LifelineStatus.ALREADY_RECEIVING:
+                    return 'Already receiving Lifeline'
+                return 'No potential Lifeline pathway identified'
+
+            before = describe_pathway(results)
+            after = describe_pathway(hypothetical_results)
+            left, right = st.columns(2)
+            with left:
+                st.markdown('**Original household**')
+                st.info(before)
+                st.caption('Income: ' + '&#36;{:,.0f}'.format(baseline['annual_income'])
+                           + ' · SNAP: ' + ('Yes' if baseline['snap'] else 'No')
+                           + ' · Medicaid: ' + ('Yes' if baseline['medicaid'] else 'No'))
+            with right:
+                st.markdown('**Hypothetical household**')
+                st.info(after)
+                st.caption('Income: ' + '&#36;{:,.0f}'.format(scenario['annual_income'])
+                           + ' · SNAP: ' + ('Yes' if scenario['snap'] else 'No')
+                           + ' · Medicaid: ' + ('Yes' if scenario['medicaid'] else 'No'))
+            if before == after:
+                st.write('The main Lifeline screening category is unchanged under this scenario.')
+            else:
+                st.write('The preliminary Lifeline screening category changes under this scenario.')
+            st.markdown('**Hypothetical Benefit Domino Effect**')
+            st.plotly_chart(render_benefit_graph(simulated, hypothetical_results),
+                            use_container_width=True, key='whatif_graph')
+            st.caption(
+                'This comparison models hypothetical inputs with the same published '
+                'screening rules. A checked box is **not** confirmation of actual '
+                'benefit participation; official program verification and a separate '
+                'application are required. SNAP and SER amounts are not estimated.'
+            )
 
     # ------------------------------------------------------------------
     # Footer disclaimer
