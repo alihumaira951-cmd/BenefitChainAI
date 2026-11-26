@@ -6,6 +6,7 @@ from engine import (
 )
 from graph import render_benefit_graph
 from discovery import discover_benefits
+from action_plan import create_action_plan
 # ---------------------------------------------------------------------------
 # Page config — centered layout, no sidebar
 # ---------------------------------------------------------------------------
@@ -769,6 +770,41 @@ if submitted:
                     "Explore or Apply through MI Bridges",
                     opportunity.application_url,
                 )
+    
+    # ------------------------------------------------------------------
+    # Personalized Benefit Action Plan
+    # ------------------------------------------------------------------
+    opportunities = discover_benefits(h)
+    action_items = create_action_plan(h, results, opportunities)
+
+    if action_items:
+        st.markdown(
+            '<div class="section-title" style="margin-top:1.4rem">'
+            '🧭 Your Personalized Benefit Action Plan</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.caption(
+            "These are suggested next steps based on preliminary "
+            "screening, not official eligibility decisions."
+        )
+
+        for index, item in enumerate(action_items, start=1):
+            with st.container(border=True):
+                st.subheader(f"{index}. {item.program}")
+                st.info(item.priority)
+                st.write(item.reason)
+
+                st.markdown("**Recommended next steps:**")
+                for step_number, step in enumerate(item.next_steps, start=1):
+                    st.write(f"{step_number}. {step}")
+
+                st.link_button(
+                    "Official Information / Apply",
+                    item.url,
+                )
+
+
 
 
     # ------------------------------------------------------------------
