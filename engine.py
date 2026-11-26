@@ -65,6 +65,7 @@ class Household:
     veterans_pension: bool = False
     utility_emergency: bool = False
     lifeline_already: bool = False
+    children_under_19: int = 0
 
 
 # Canonical alias used in design docs; Household is the primary name so
